@@ -157,10 +157,205 @@ def get_shorter_translations(
     Returns:
         Empty list (stub).  Implement to return ``TranslationCandidate`` items.
     """
+    # Rule-based duration-aware re-ranking.
+    # We estimate Spanish TTS duration with the notebook heuristic:
+    # about 15 characters per second.
+    source_text = (source_text or "").strip()
+    baseline_es = (baseline_es or "").strip()
+
+    if not baseline_es:
+        return []
+
+    char_budget = max(1, int(target_duration_s * 15))
+
+    def normalize_spaces(text: str) -> str:
+        text = " ".join(text.split())
+        for punct in [".", ",", ":", ";", "?", "!", ")"]:
+            text = text.replace(f" {punct}", punct)
+        text = text.replace("( ", "(")
+        return text.strip()
+
+    def add_candidate(
+        candidates: list[TranslationCandidate],
+        seen: set[str],
+        text: str,
+        rationale: str,
+    ) -> None:
+        text = normalize_spaces(text).strip(" ,;:")
+
+        if not text:
+            return
+
+        if baseline_es.endswith((".", "?", "!")) and not text.endswith((".", "?", "!")):
+            text += baseline_es[-1]
+
+        key = text.lower()
+        if key in seen:
+            return
+
+        seen.add(key)
+        candidates.append(
+            TranslationCandidate(
+                text=text,
+                char_count=len(text),
+                brevity_rationale=rationale,
+            )
+        )
+
+    candidates: list[TranslationCandidate] = []
+    seen: set[str] = set()
+
+    baseline_clean = normalize_spaces(baseline_es)
+
+    # If the baseline already fits the duration budget, return it.
+    if len(baseline_clean) <= char_budget:
+        add_candidate(
+            candidates,
+            seen,
+            baseline_clean,
+            "Baseline translation already fits the duration budget.",
+        )
+        return candidates
+
+    # 1. Remove common filler / low-information Spanish phrases.
+    filler_phrases = [
+        "en realidad",
+        "realmente",
+        "básicamente",
+        "simplemente",
+        "por supuesto",
+        "desde luego",
+        "en este momento",
+        "en estos momentos",
+        "en el momento actual",
+        "el hecho de que",
+        "lo que es",
+        "lo que está",
+        "que es lo que",
+        "de alguna manera",
+        "de forma significativa",
+        "de manera significativa",
+        "muy",
+        "tan",
+    ]
+
+    shortened = baseline_clean
+    for phrase in filler_phrases:
+        shortened = shortened.replace(f" {phrase} ", " ")
+        shortened = shortened.replace(f" {phrase},", ",")
+        shortened = shortened.replace(f"{phrase} ", "")
+        shortened = shortened.replace(phrase, "")
+
+    add_candidate(
+        candidates,
+        seen,
+        shortened,
+        "Removed filler or low-information phrases.",
+    )
+
+    # 2. Replace verbose Spanish phrases with shorter equivalents.
+    replacements = {
+        "en este momento": "ahora",
+        "en estos momentos": "ahora",
+        "en el momento actual": "ahora",
+        "con el fin de": "para",
+        "a fin de": "para",
+        "debido a que": "porque",
+        "ya que": "porque",
+        "puesto que": "porque",
+        "a pesar de que": "aunque",
+        "por el hecho de que": "porque",
+        "tener la capacidad de": "poder",
+        "tiene la capacidad de": "puede",
+        "tienen la capacidad de": "pueden",
+        "es necesario que": "debe",
+        "ser capaz de": "poder",
+        "llevar a cabo": "hacer",
+        "dar lugar a": "causar",
+        "como resultado": "así",
+        "por esa razón": "por eso",
+        "un gran número de": "muchos",
+        "una gran cantidad de": "mucho",
+        "cada uno de": "cada",
+    }
+
+    replaced = baseline_clean
+    for long_phrase, short_phrase in replacements.items():
+        replaced = replaced.replace(long_phrase, short_phrase)
+
+    add_candidate(
+        candidates,
+        seen,
+        replaced,
+        "Replaced verbose Spanish phrases with shorter equivalents.",
+    )
+
+    # 3. Combine filler removal with phrase replacement.
+    combined = shortened
+    for long_phrase, short_phrase in replacements.items():
+        combined = combined.replace(long_phrase, short_phrase)
+
+    add_candidate(
+        candidates,
+        seen,
+        combined,
+        "Combined filler removal with shorter phrase substitutions.",
+    )
+
+    # 4. Fallback: truncate at word boundaries to fit the character budget.
+    # This is less semantically ideal, so it is only used when rule-based
+    # shortening still exceeds the target budget.
+    best_so_far = min(
+        [baseline_clean] + [candidate.text for candidate in candidates],
+        key=len,
+    )
+
+    if len(best_so_far) > char_budget:
+        words = best_so_far.split()
+        kept_words: list[str] = []
+        current_len = 0
+
+        for word in words:
+            extra_len = len(word) + (1 if kept_words else 0)
+            if current_len + extra_len <= char_budget:
+                kept_words.append(word)
+                current_len += extra_len
+            else:
+                break
+
+        if kept_words:
+            truncated = " ".join(kept_words)
+            add_candidate(
+                candidates,
+                seen,
+                truncated,
+                f"Truncated at word boundaries to fit the {char_budget}-character budget.",
+            )
+
+    if not candidates:
+        add_candidate(
+            candidates,
+            seen,
+            baseline_clean,
+            "Fallback to normalized baseline translation.",
+        )
+
+    # Sort fitting candidates first, then by closeness to the duration budget.
+    candidates.sort(
+        key=lambda candidate: (
+            candidate.char_count > char_budget,
+            abs(candidate.char_count - char_budget),
+            candidate.char_count,
+        )
+    )
+
     logger.info(
-        "get_shorter_translations called for %.1fs budget (%d chars baseline) — "
-        "returning empty list (student assignment stub).",
+        "Generated %d shorter translation candidates for %.1fs budget "
+        "(budget=%d chars, baseline=%d chars).",
+        len(candidates),
         target_duration_s,
+        char_budget,
         len(baseline_es),
     )
-    return []
+
+    return candidates
