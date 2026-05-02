@@ -7,6 +7,7 @@ import pathlib
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+from foreign_whispers.voice_resolution import resolve_speaker_wav
 
 from api.src.core.config import settings
 from api.src.core.dependencies import resolve_title
@@ -27,6 +28,10 @@ async def tts_endpoint(
     request: Request,
     config: str = Query(..., pattern=r"^c-[0-9a-f]{7}$"),
     alignment: bool = Query(False),
+    speaker_wav: str | None = Query(
+        None,
+        description="Reference voice WAV path, e.g. 'es/default.wav'",
+    ),
 ):
     """Generate TTS audio for a translated transcript.
 
@@ -57,8 +62,16 @@ async def tts_endpoint(
 
     source_path = str(trans_dir / f"{title}.json")
 
+    if speaker_wav is None:
+        speaker_wav = resolve_speaker_wav(settings.speakers_dir, "es")
+
     await _run_in_threadpool(
-        None, svc.text_file_to_speech, source_path, str(audio_dir), alignment=alignment
+        None,
+        svc.text_file_to_speech,
+        source_path,
+        str(audio_dir),
+        alignment=alignment,
+        speaker_wav=speaker_wav,
     )
 
     return {
