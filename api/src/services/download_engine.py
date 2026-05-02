@@ -14,7 +14,12 @@ _COOKIES_FILE = os.getenv("YT_COOKIES_FILE", "/app/cookies.txt")
 def _yt_dlp_opts(**extra):
     """Base yt-dlp options. Cookies are optional — yt-dlp works without them
     by using alternative YouTube clients (Android VR) that bypass n-challenge."""
-    opts = {"quiet": True, "no_warnings": True}
+    #opts = {"quiet": True, "no_warnings": True}
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "remote_components": ["ejs:github"],
+    }
     if pathlib.Path(_COOKIES_FILE).exists():
         opts["cookiefile"] = _COOKIES_FILE
     opts.update(extra)
@@ -58,7 +63,7 @@ def download_video(url, destination_folder, filename=None):
         return str(save_path)
     print(f"Downloading: {title}...", end=" ", flush=True)
     ydl_opts = _yt_dlp_opts(
-        format="bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+        format="bv*+ba/b",
         merge_output_format="mp4",
         outtmpl=str(pathlib.Path(destination_folder) / (safe_title + ".%(ext)s")),
     )
