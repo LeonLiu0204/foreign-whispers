@@ -11,6 +11,7 @@ import librosa
 import soundfile as sf
 import pyrubberband
 from pydub import AudioSegment
+from foreign_whispers.voice_resolution import resolve_speaker_wav
 
 # ── Chatterbox API configuration ─────────────────────────────────────
 CHATTERBOX_API_URL = os.getenv("CHATTERBOX_API_URL", "http://localhost:8020")
@@ -483,6 +484,27 @@ def text_file_to_speech(
                     en_text = en_segs[i].get("text", "")
                 seg_text = _shorten_segment_text(en_text, seg["text"], target_sec)
 
+        speaker_id = seg.get("speaker")
+
+        if not speaker_id:
+            en_segs = en_transcript.get("segments", [])
+            if i < len(en_segs):
+                speaker_id = en_segs[i].get("speaker")
+
+        segment_speaker_wav = speaker_wav
+
+        if segment_speaker_wav is None:
+            speakers_base = (
+                pathlib.Path(__file__).parent.parent.parent.parent
+                / "pipeline_data"
+                / "speakers"
+            )
+            segment_speaker_wav = resolve_speaker_wav(
+                speakers_base,
+                "es",
+                speaker_id,
+            )
+            
         seg_metas.append({
             "index": i,
             "text": seg_text,
@@ -491,6 +513,8 @@ def text_file_to_speech(
             "target_sec": target_sec,
             "stretch_factor": stretch_factor,
             "aligned_seg": aligned_seg,
+            "speaker": speaker_id,
+            "speaker_wav": segment_speaker_wav,
         })
 
     # ── Phase 1: GPU synthesis (concurrent) ───────────────────────────
@@ -502,18 +526,18 @@ def text_file_to_speech(
     raw_wav_map: dict[int, bytes | None] = {}
 
     with tempfile.TemporaryDirectory() as synth_dir:
-        def _do_synth(idx: int, text: str) -> tuple[int, bytes | None]:
+        def _do_synth(idx: int, text: str, segment_speaker_wav: str | None) -> tuple[int, bytes | None]:
             wav_path = str(pathlib.Path(synth_dir) / f"seg_{idx}.wav")
             return idx, _synthesize_raw(
                 engine,
                 text,
                 wav_path,
-                speaker_wav=speaker_wav,
+                speaker_wav=segment_speaker_wav,
             )
 
         with ThreadPoolExecutor(max_workers=_TTS_WORKERS) as pool:
             futures = {
-                pool.submit(_do_synth, m["index"], m["text"]): m["index"]
+                pool.submit(_do_synth, m["index"], m["text"], m.get("speaker_wav")): m["index"]
                 for m in seg_metas
             }
             for fut in as_completed(futures):
@@ -545,6 +569,8 @@ def text_file_to_speech(
             segment_details.append({
                 "index": i,
                 "text": m["text"],
+                "speaker": m.get("speaker"),
+                "speaker_wav": m.get("speaker_wav"),
                 "target_sec": round(m["target_sec"], 3),
                 "stretch_factor": round(m["stretch_factor"], 3),
                 "raw_duration_s": round(seg_raw_duration, 3),

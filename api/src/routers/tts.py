@@ -62,8 +62,8 @@ async def tts_endpoint(
 
     source_path = str(trans_dir / f"{title}.json")
 
-    if speaker_wav is None:
-        speaker_wav = resolve_speaker_wav(settings.speakers_dir, "es")
+    # if speaker_wav is None:
+    #     speaker_wav = resolve_speaker_wav(settings.speakers_dir, "es")
 
     await _run_in_threadpool(
         None,
