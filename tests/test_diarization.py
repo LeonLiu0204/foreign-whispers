@@ -71,7 +71,7 @@ def test_assigns_default_when_no_overlap():
 
     result = assign_speakers(segments, diarization)
 
-    assert result[0]["speaker"] == "UNKNOWN"
+    assert result[0]["speaker"] == "SPEAKER_00"
 
 
 def test_assigns_default_when_diarization_empty():
@@ -82,4 +82,4 @@ def test_assigns_default_when_diarization_empty():
 
     result = assign_speakers(segments, [])
 
-    assert [seg["speaker"] for seg in result] == ["UNKNOWN", "UNKNOWN"]
+    assert [seg["speaker"] for seg in result] == ["SPEAKER_00", "SPEAKER_00"]

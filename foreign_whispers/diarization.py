@@ -48,7 +48,7 @@ def diarize_audio(audio_path: str, hf_token: str | None = None) -> list[dict]:
 def assign_speakers(
     segments: list[dict],
     diarization: list[dict],
-    default_speaker: str = "UNKNOWN",
+    default_speaker: str = "SPEAKER_00",
 ) -> list[dict]:
     """Assign speaker labels to transcript segments.
 
