@@ -37,9 +37,25 @@ _SYLLABLE_RATE = 4.5  # syllables per second for Romance languages
 
 
 def _estimate_duration(text: str) -> float:
-    """Estimate TTS duration in seconds using a syllable-rate heuristic."""
-    return _count_syllables(text) / _SYLLABLE_RATE
+    """Estimate TTS duration in seconds using a lightweight speech heuristic.
 
+    The estimate combines a Romance-language syllable rate with small pause
+    penalties for punctuation. This is more stable than a raw characters/sec
+    heuristic for Spanish translations, especially for short or punctuated
+    segments.
+    """
+    cleaned = text.strip()
+    if not cleaned:
+        return 0.0
+
+    syllable_duration = _count_syllables(cleaned) / _SYLLABLE_RATE
+
+    comma_pauses = len(re.findall(r"[,;:]", cleaned)) * 0.15
+    sentence_pauses = len(re.findall(r"[.!?]", cleaned)) * 0.25
+
+    # Very short utterances still need some audible time.
+    return max(0.35, syllable_duration + comma_pauses + sentence_pauses)
+    
 
 @dataclasses.dataclass
 class SegmentMetrics:
