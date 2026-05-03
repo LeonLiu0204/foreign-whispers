@@ -532,7 +532,7 @@ def text_file_to_speech(
                 engine,
                 text,
                 wav_path,
-                speaker_wav=segment_speaker_wav,
+                speaker_wav=None,
             )
 
         with ThreadPoolExecutor(max_workers=_TTS_WORKERS) as pool:
