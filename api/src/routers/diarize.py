@@ -11,6 +11,8 @@ from api.src.core.dependencies import resolve_title
 from api.src.schemas.diarize import DiarizeResponse
 from api.src.services.alignment_service import AlignmentService
 
+from foreign_whispers.diarization import assign_speakers
+
 router = APIRouter(prefix="/api")
 
 _alignment_service = AlignmentService(settings=settings)
@@ -79,24 +81,36 @@ async def diarize_endpoint(video_id: str):
             status_code=500,
             detail=f"Audio extraction failed: {exc.stderr}",
         ) from exc
-
+        
     diar_segments = await asyncio.to_thread(
         _alignment_service.diarize,
         str(audio_path),
     )
-
+    
     speakers = sorted({seg["speaker"] for seg in diar_segments if "speaker" in seg})
-
+    
+    # Merge speaker labels into the cached transcription JSON.
+    transcript_path = settings.transcriptions_dir / f"{title}.json"
+    if transcript_path.exists():
+        transcript_data = json.loads(transcript_path.read_text())
+        transcript_segments = transcript_data.get("segments", [])
+    
+        transcript_data["segments"] = assign_speakers(
+            transcript_segments,
+            diar_segments,
+        )
+    
+        transcript_path.write_text(json.dumps(transcript_data, indent=2))
+    
     result = {
         "speakers": speakers,
         "segments": diar_segments,
     }
     diar_path.write_text(json.dumps(result, indent=2))
-
+    
     return DiarizeResponse(
         video_id=video_id,
         speakers=speakers,
         segments=diar_segments,
         skipped=False,
     )
-    # ---- END YOUR CODE ----
