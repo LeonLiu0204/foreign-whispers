@@ -225,6 +225,26 @@ async def stitch_endpoint(
     output_path = output_dir / f"{title}.mp4"
 
     if output_path.exists():
+        # Ensure captions exist even when video is cached.
+        captions_dir = settings.dubbed_captions_dir
+        captions_dir.mkdir(parents=True, exist_ok=True)
+        captions_path = captions_dir / f"{title}.vtt"
+
+        if not captions_path.exists():
+            translation_path = settings.translations_dir / f"{title}.json"
+            if translation_path.exists():
+                data = json.loads(translation_path.read_text())
+                segments = data.get("segments", [])
+
+                offset = _compute_speech_offset(title)
+                if offset > 0:
+                    segments = [
+                        {**seg, "start": seg["start"] + offset, "end": seg["end"] + offset}
+                        for seg in segments
+                    ]
+
+                captions_path.write_text(_segments_to_vtt(segments))
+
         return {"video_id": video_id, "video_path": str(output_path), "config": config}
 
     video_path = str(videos_dir / f"{title}.mp4")
@@ -241,6 +261,26 @@ async def stitch_endpoint(
             str(output_path),
         ),
     )
+
+    # Generate translated dubbed captions as a P5 artifact.
+    captions_dir = settings.dubbed_captions_dir
+    captions_dir.mkdir(parents=True, exist_ok=True)
+    captions_path = captions_dir / f"{title}.vtt"
+
+    if not captions_path.exists():
+        translation_path = settings.translations_dir / f"{title}.json"
+        if translation_path.exists():
+            data = json.loads(translation_path.read_text())
+            segments = data.get("segments", [])
+
+            offset = _compute_speech_offset(title)
+            if offset > 0:
+                segments = [
+                    {**seg, "start": seg["start"] + offset, "end": seg["end"] + offset}
+                    for seg in segments
+                ]
+
+            captions_path.write_text(_segments_to_vtt(segments))
 
     return {"video_id": video_id, "video_path": str(output_path), "config": config}
 
