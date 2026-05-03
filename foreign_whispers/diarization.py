@@ -26,8 +26,8 @@ def diarize_audio(audio_path: str, hf_token: str | None = None) -> list[dict]:
 
     try:
         from pyannote.audio import Pipeline
-    except (ImportError, TypeError):
-        logger.warning("pyannote.audio not installed — returning empty diarization.")
+    except Exception as exc:
+        logger.warning("pyannote.audio unavailable or incompatible: %s", exc)
         return []
 
     try:
