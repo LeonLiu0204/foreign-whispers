@@ -44,24 +44,59 @@ async def diarize_endpoint(video_id: str):
         )
 
     # ---- YOUR CODE HERE ----
-    # Step 1: Extract audio from video
-    #   video_path = settings.videos_dir / f"{title}.mp4"
-    #   audio_path = diar_dir / f"{title}.wav"
-    #   Use subprocess.run to call:
-    #     ffmpeg -i <video_path> -vn -acodec pcm_s16le -ar 16000 -y <audio_path>
-    #
-    # Step 2: Run diarization
-    #   diar_segments = _alignment_service.diarize(str(audio_path))
-    #
-    # Step 3: Extract unique speakers
-    #   speakers = sorted(set(s["speaker"] for s in diar_segments))
-    #
-    # Step 4: Cache result
-    #   result = {"speakers": speakers, "segments": diar_segments}
-    #   diar_path.write_text(json.dumps(result))
-    #
-    # Step 5: Return DiarizeResponse
-    #   return DiarizeResponse(video_id=video_id, speakers=speakers, segments=diar_segments)
-    #
-    raise HTTPException(status_code=501, detail="Diarization not yet implemented")
+    video_path = settings.videos_dir / f"{title}.mp4"
+    if not video_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Video file not found: {video_path}",
+        )
+
+    audio_path = diar_dir / f"{title}.wav"
+
+    try:
+        await asyncio.to_thread(
+            subprocess.run,
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(video_path),
+                "-vn",
+                "-acodec",
+                "pcm_s16le",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                str(audio_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Audio extraction failed: {exc.stderr}",
+        ) from exc
+
+    diar_segments = await asyncio.to_thread(
+        _alignment_service.diarize,
+        str(audio_path),
+    )
+
+    speakers = sorted({seg["speaker"] for seg in diar_segments if "speaker" in seg})
+
+    result = {
+        "speakers": speakers,
+        "segments": diar_segments,
+    }
+    diar_path.write_text(json.dumps(result, indent=2))
+
+    return DiarizeResponse(
+        video_id=video_id,
+        speakers=speakers,
+        segments=diar_segments,
+        skipped=False,
+    )
     # ---- END YOUR CODE ----
